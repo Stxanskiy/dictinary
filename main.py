@@ -106,11 +106,11 @@ class LoginWindow(QMainWindow):
         layout = QVBoxLayout()
 
         self.username_input = QLineEdit(self)
-        self.username_input.setPlaceholderText("Username")
+        self.username_input.setPlaceholderText("Логин")
         layout.addWidget(self.username_input)
 
         self.password_input = QLineEdit(self)
-        self.password_input.setPlaceholderText("Password")
+        self.password_input.setPlaceholderText("Пароль")
         self.password_input.setEchoMode(QLineEdit.EchoMode.Password)
         layout.addWidget(self.password_input)
 
@@ -118,7 +118,7 @@ class LoginWindow(QMainWindow):
         self.login_button.clicked.connect(self.login)
         layout.addWidget(self.login_button)
 
-        self.register_button = QPushButton("Register", self)
+        self.register_button = QPushButton("Регистрация", self)
         self.register_button.clicked.connect(self.register)
         layout.addWidget(self.register_button)
 
@@ -136,25 +136,25 @@ class LoginWindow(QMainWindow):
             self.main_window.show()
             self.close()
         else:
-            QMessageBox.warning(self, "Error", "Invalid credentials")
+            QMessageBox.warning(self, "Error:", "\n неправильный пароль или логин")
 
     def register(self):
-        username, ok = QInputDialog.getText(self, "Register", "Enter username:")
+        username, ok = QInputDialog.getText(self, "Регистрация", "Введите имя:")
         if not ok or not username:
             return
 
-        password, ok = QInputDialog.getText(self, "Register", "Enter password:", QLineEdit.EchoMode.Password)
+        password, ok = QInputDialog.getText(self, "Регистрация", "Введите пароль:", QLineEdit.EchoMode.Password)
         if not ok or not password:
             return
 
-        role, ok = QInputDialog.getItem(self, "Register", "Select role:", ["user", "admin"], 0, False)
+        role, ok = QInputDialog.getItem(self, "Регистрация", "Выбрать Роль:", ["Пользователь", "Администратор"], 0, False)
         if not ok:
             return
 
         if self.db.register_user(username, password, role):
-            QMessageBox.information(self, "Success", "User registered successfully")
+            QMessageBox.information(self, "Успешно", "Пользователь успешно зарегестрирован")
         else:
-            QMessageBox.warning(self, "Error", "Username already exists")
+            QMessageBox.warning(self, "Error", "Попробуйте еще раз")
 
 
 class MainWindow(QMainWindow):
@@ -162,23 +162,27 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.db = db
         self.user_id, self.role = user
-        self.setWindowTitle("Dictionary App")
+        self.setWindowTitle("Config App")
         self.setGeometry(200, 200, 600, 400)
 
         layout = QVBoxLayout()
 
         self.dictionaries_table = QTableWidget()
         self.dictionaries_table.setColumnCount(2)
-        self.dictionaries_table.setHorizontalHeaderLabels(["ID", "Name"])
+        self.dictionaries_table.setHorizontalHeaderLabels(["ID", "Нзавание"])
         self.dictionaries_table.cellDoubleClicked.connect(self.open_dictionary)
         layout.addWidget(self.dictionaries_table)
 
         if self.role == "admin":
-            self.create_dict_button = QPushButton("Create Dictionary")
+            self.create_dict_button = QPushButton("Создать config")
             self.create_dict_button.clicked.connect(self.create_dictionary)
             layout.addWidget(self.create_dict_button)
 
-            self.delete_dict_button = QPushButton("Delete Dictionary")
+            self.edit_dict_button = QPushButton("Изменить  config")  # New button for editing dictionaries
+            self.edit_dict_button.clicked.connect(self.edit_dictionary)
+            layout.addWidget(self.edit_dict_button)
+
+            self.delete_dict_button = QPushButton("Удалить config")
             self.delete_dict_button.clicked.connect(self.delete_dictionary)
             layout.addWidget(self.delete_dict_button)
 
@@ -200,15 +204,35 @@ class MainWindow(QMainWindow):
             self.dictionaries_table.setItem(row, 1, QTableWidgetItem(name))
 
     def create_dictionary(self):
-        name, ok = QInputDialog.getText(self, "Create Dictionary", "Enter dictionary name:")
+        name, ok = QInputDialog.getText(self, "Создать конфиг", "Введите название конфига:")
         if ok and name:
             self.db.create_dictionary(name, self.user_id)
             self.load_dictionaries()
 
+    def edit_dictionary(self):
+        current_row = self.dictionaries_table.currentRow()
+        if current_row == -1:
+            QMessageBox.warning(self, "Ошибка", "Не выбран конфиг")
+            return
+
+        dict_id = int(self.dictionaries_table.item(current_row, 0).text())
+        current_name = self.dictionaries_table.item(current_row, 1).text()
+
+        new_name, ok = QInputDialog.getText(self, "Изменить конфиг", "Введите новое название конфига:", text=current_name)
+        if not ok or not new_name:
+            return
+
+        with self.db.conn:
+            self.db.conn.execute(
+                "UPDATE dictionaries SET name = ? WHERE id = ?",
+                (new_name, dict_id)
+            )
+        self.load_dictionaries()
+
     def delete_dictionary(self):
         current_row = self.dictionaries_table.currentRow()
         if current_row == -1:
-            QMessageBox.warning(self, "Error", "No dictionary selected")
+            QMessageBox.warning(self, "Error", " Конфиг не выбран")
             return
 
         dict_id = int(self.dictionaries_table.item(current_row, 0).text())
@@ -220,38 +244,6 @@ class MainWindow(QMainWindow):
         self.dictionary_window = DictionaryWindow(self.db, dict_id)
         self.dictionary_window.show()
 
-
-    def load_dictionaries(self):
-        self.dictionaries_table.setRowCount(0)
-        dictionaries = self.db.get_dictionaries(
-            user_id=self.user_id if self.role == "admin" else None,
-            admin=self.role == "admin"
-        )
-        for row, (dict_id, name) in enumerate(dictionaries):
-            self.dictionaries_table.insertRow(row)
-            self.dictionaries_table.setItem(row, 0, QTableWidgetItem(str(dict_id)))
-            self.dictionaries_table.setItem(row, 1, QTableWidgetItem(name))
-
-    def create_dictionary(self):
-        name, ok = QInputDialog.getText(self, "Create Dictionary", "Enter dictionary name:")
-        if ok and name:
-            self.db.create_dictionary(name, self.user_id)
-            self.load_dictionaries()
-
-    def delete_dictionary(self):
-        current_row = self.dictionaries_table.currentRow()
-        if current_row == -1:
-            QMessageBox.warning(self, "Error", "No dictionary selected")
-            return
-
-        dict_id = int(self.dictionaries_table.item(current_row, 0).text())
-        self.db.delete_dictionary(dict_id)
-        self.load_dictionaries()
-
-    def open_dictionary(self, row, column):
-        dict_id = int(self.dictionaries_table.item(row, 0).text())
-        self.dictionary_window = DictionaryWindow(self.db, dict_id)
-        self.dictionary_window.show()
 
 
 class DictionaryWindow(QMainWindow):
@@ -266,15 +258,20 @@ class DictionaryWindow(QMainWindow):
 
         self.words_table = QTableWidget()
         self.words_table.setColumnCount(3)
-        self.words_table.setHorizontalHeaderLabels(["ID", "Word", "Translation"])
+        self.words_table.setHorizontalHeaderLabels(["ID", "Переменная", "Значение"])
         layout.addWidget(self.words_table)
 
         buttons_layout = QHBoxLayout()
-        self.add_word_button = QPushButton("Add Word")
+
+        self.add_word_button = QPushButton("Создать переменную")
         self.add_word_button.clicked.connect(self.add_word)
         buttons_layout.addWidget(self.add_word_button)
 
-        self.delete_word_button = QPushButton("Delete Word")
+        self.edit_word_button = QPushButton("Изменить переменную")  # New button for editing words
+        self.edit_word_button.clicked.connect(self.edit_word)
+        buttons_layout.addWidget(self.edit_word_button)
+
+        self.delete_word_button = QPushButton("Удалить переменную")
         self.delete_word_button.clicked.connect(self.delete_word)
         buttons_layout.addWidget(self.delete_word_button)
 
@@ -296,21 +293,47 @@ class DictionaryWindow(QMainWindow):
             self.words_table.setItem(row, 2, QTableWidgetItem(translation))
 
     def add_word(self):
-        word, ok = QInputDialog.getText(self, "Add Word", "Enter word:")
+        word, ok = QInputDialog.getText(self, "Создать переменную ", "введите  переменную:")
         if not ok or not word:
             return
 
-        translation, ok = QInputDialog.getText(self, "Add Translation", "Enter translation:")
+        translation, ok = QInputDialog.getText(self, "Добавить значение", "Введите значение:")
         if not ok or not translation:
             return
 
         self.db.add_word(self.dictionary_id, word, translation)
         self.load_words()
 
+    def edit_word(self):
+        current_row = self.words_table.currentRow()
+        if current_row == -1:
+            QMessageBox.warning(self, "Error", "Переменная не выбрана")
+            return
+
+        word_id = int(self.words_table.item(current_row, 0).text())
+        current_word = self.words_table.item(current_row, 1).text()
+        current_translation = self.words_table.item(current_row, 2).text()
+
+        new_word, ok = QInputDialog.getText(self, "Изменить переменную", "Введите название новой переменной:", text=current_word)
+        if not ok or not new_word:
+            return
+
+        new_translation, ok = QInputDialog.getText(self, "Изменить Значение", "Введите название нового значения:",
+                                                   text=current_translation)
+        if not ok or not new_translation:
+            return
+
+        with self.db.conn:
+            self.db.conn.execute(
+                "UPDATE words SET word = ?, translation = ? WHERE id = ?",
+                (new_word, new_translation, word_id)
+            )
+        self.load_words()
+
     def delete_word(self):
         current_row = self.words_table.currentRow()
         if current_row == -1:
-            QMessageBox.warning(self, "Error", "No word selected")
+            QMessageBox.warning(self, "Error", "Не выбрана переменная")
             return
 
         word_id = int(self.words_table.item(current_row, 0).text())
